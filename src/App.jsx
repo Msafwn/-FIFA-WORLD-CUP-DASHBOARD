@@ -8,89 +8,14 @@ import PlayerCard from './components/PlayerCard';
 import SquadPlayerCard from './components/SquadPlayerCard';
 import StandingTable from './components/StandingTable';
 import Pagination from './components/Pagination';
-import initialData from './data/initialData.json';
-
-const computeInitialStandings = (matchList) => {
-  const groupMatches = (matchList || []).filter(m => m.stage === 'GROUP_STAGE' && m.group);
-  const groupsMap = {};
-
-  groupMatches.forEach(m => {
-    const gName = m.group.replace('GROUP_', 'Group ');
-    if (!groupsMap[gName]) groupsMap[gName] = {};
-
-    [m.homeTeam, m.awayTeam].forEach(t => {
-      if (!t || !t.id) return;
-      if (!groupsMap[gName][t.id]) {
-        groupsMap[gName][t.id] = {
-          position: 1,
-          team: { id: t.id, name: t.name, crest: t.crest, tla: t.tla },
-          playedGames: 0,
-          won: 0,
-          draw: 0,
-          lost: 0,
-          goalsFor: 0,
-          goalsAgainst: 0,
-          goalDifference: 0,
-          points: 0
-        };
-      }
-    });
-
-    if (m.status === 'FINISHED' && m.score?.fullTime) {
-      const homeGoals = Number(m.score.fullTime.home) || 0;
-      const awayGoals = Number(m.score.fullTime.away) || 0;
-      const home = groupsMap[gName][m.homeTeam?.id];
-      const away = groupsMap[gName][m.awayTeam?.id];
-      if (home && away) {
-        home.playedGames += 1;
-        away.playedGames += 1;
-        home.goalsFor += homeGoals;
-        home.goalsAgainst += awayGoals;
-        away.goalsFor += awayGoals;
-        away.goalsAgainst += homeGoals;
-        home.goalDifference = home.goalsFor - home.goalsAgainst;
-        away.goalDifference = away.goalsFor - away.goalsAgainst;
-
-        if (homeGoals > awayGoals) {
-          home.won += 1;
-          home.points += 3;
-          away.lost += 1;
-        } else if (homeGoals < awayGoals) {
-          away.won += 1;
-          away.points += 3;
-          home.lost += 1;
-        } else {
-          home.draw += 1;
-          away.draw += 1;
-          home.points += 1;
-          away.points += 1;
-        }
-      }
-    }
-  });
-
-  return Object.entries(groupsMap)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([groupName, teamsObj]) => {
-      const sortedTable = Object.values(teamsObj)
-        .sort((a, b) => {
-          if (b.points !== a.points) return b.points - a.points;
-          if (b.goalDifference !== a.goalDifference) return b.goalDifference - a.goalDifference;
-          return b.goalsFor - a.goalsFor;
-        })
-        .map((row, idx) => ({ ...row, position: idx + 1 }));
-      return { group: groupName, table: sortedTable };
-    });
-};
 
 function App() {
-  // Instant Initial Data (0ms latency, zero layout shift)
-  const [teams, setTeams] = useState(() => initialData.teams || []);
-  const [competitions, setCompetitions] = useState(() => initialData.competitions || null);
-  const [matches, setMatches] = useState(() => initialData.matches || []);
-  const [standings, setStandings] = useState(() => computeInitialStandings(initialData.matches || []));
-  const [scorers, setScorers] = useState(() => initialData.scorers || []);
-  const [loading, setLoading] = useState(false);
+  const [teams, setTeams] = useState([]);
+  const [competitions, setCompetitions] = useState(null);
+  const [matches, setMatches] = useState([]);
+  const [standings, setStandings] = useState([]);
+  const [scorers, setScorers] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [error, setError] = useState(null);
   
@@ -118,19 +43,92 @@ function App() {
   const [squadPage, setSquadPage] = useState(1);
   const SQUAD_PER_PAGE = 12; // 3 rows (4 cols per row)
 
-  const [isCached, setIsCached] = useState(true);
-  const [lastUpdated, setLastUpdated] = useState(new Date());
+  const [isCached, setIsCached] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(null);
 
-  const computeStandingsFromMatches = computeInitialStandings;
+  const computeStandingsFromMatches = (matchList) => {
+    const groupMatches = (matchList || []).filter(m => m.stage === 'GROUP_STAGE' && m.group);
+    const groupsMap = {};
+
+    groupMatches.forEach(m => {
+      const gName = m.group.replace('GROUP_', 'Group ');
+      if (!groupsMap[gName]) groupsMap[gName] = {};
+
+      [m.homeTeam, m.awayTeam].forEach(t => {
+        if (!t || !t.id) return;
+        if (!groupsMap[gName][t.id]) {
+          groupsMap[gName][t.id] = {
+            position: 1,
+            team: { id: t.id, name: t.name, crest: t.crest, tla: t.tla },
+            playedGames: 0,
+            won: 0,
+            draw: 0,
+            lost: 0,
+            goalsFor: 0,
+            goalsAgainst: 0,
+            goalDifference: 0,
+            points: 0
+          };
+        }
+      });
+
+      if (m.status === 'FINISHED' && m.score?.fullTime) {
+        const homeGoals = Number(m.score.fullTime.home) || 0;
+        const awayGoals = Number(m.score.fullTime.away) || 0;
+        const home = groupsMap[gName][m.homeTeam?.id];
+        const away = groupsMap[gName][m.awayTeam?.id];
+        if (home && away) {
+          home.playedGames += 1;
+          away.playedGames += 1;
+          home.goalsFor += homeGoals;
+          home.goalsAgainst += awayGoals;
+          away.goalsFor += awayGoals;
+          away.goalsAgainst += homeGoals;
+          home.goalDifference = home.goalsFor - home.goalsAgainst;
+          away.goalDifference = away.goalsFor - away.goalsAgainst;
+
+          if (homeGoals > awayGoals) {
+            home.won += 1;
+            home.points += 3;
+            away.lost += 1;
+          } else if (homeGoals < awayGoals) {
+            away.won += 1;
+            away.points += 3;
+            home.lost += 1;
+          } else {
+            home.draw += 1;
+            away.draw += 1;
+            home.points += 1;
+            away.points += 1;
+          }
+        }
+      }
+    });
+
+    return Object.entries(groupsMap)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([groupName, teamsObj]) => {
+        const sortedTable = Object.values(teamsObj)
+          .sort((a, b) => {
+            if (b.points !== a.points) return b.points - a.points;
+            if (b.goalDifference !== a.goalDifference) return b.goalDifference - a.goalDifference;
+            return b.goalsFor - a.goalsFor;
+          })
+          .map((row, idx) => ({ ...row, position: idx + 1 }));
+        return { group: groupName, table: sortedTable };
+      });
+  };
 
   const loadData = async (forceRefresh = false) => {
     if (forceRefresh) {
       setIsSyncing(true);
+    } else {
+      setLoading(true);
     }
     setError(null);
 
     const CACHE_KEY = 'fifa_wc_data_cache_v1';
-    const CACHE_TTL = 30 * 60 * 1000; // 30 minutes cache
+    const CACHE_TTL = 15 * 60 * 1000; // 15 minutes cache to prevent 429 rate limits
 
     if (!forceRefresh) {
       try {
@@ -145,6 +143,7 @@ function App() {
             setScorers(cached.scorers || []);
             setLastUpdated(new Date(cached.timestamp));
             setIsCached(true);
+            setLoading(false);
             return;
           }
         }
@@ -169,7 +168,7 @@ function App() {
         endpoints.map(ep =>
           fetch(ep.url, { headers }).then(async res => {
             if (res.status === 429) {
-              throw new Error("Rate limit reached (10 req/min). Serving cached data.");
+              throw new Error("Rate limit reached (10 requests/min on free tier).");
             }
             if (!res.ok) {
               if (res.status === 404 && ep.key === 'standings') {
@@ -195,12 +194,11 @@ function App() {
           fetchedStandings = computeStandingsFromMatches(fetchedMatches);
         }
 
-        if (fetchedTeams.length > 0) setTeams(fetchedTeams);
-        if (fetchedCompetitions) setCompetitions(fetchedCompetitions);
-        if (fetchedMatches.length > 0) setMatches(fetchedMatches);
-        if (fetchedStandings.length > 0) setStandings(fetchedStandings);
-        if (fetchedScorers.length > 0) setScorers(fetchedScorers);
-        
+        setTeams(fetchedTeams);
+        setCompetitions(fetchedCompetitions);
+        setMatches(fetchedMatches);
+        setStandings(fetchedStandings);
+        setScorers(fetchedScorers);
         setLastUpdated(new Date());
         setIsCached(false);
 
@@ -208,24 +206,35 @@ function App() {
         try {
           localStorage.setItem(CACHE_KEY, JSON.stringify({
             timestamp: Date.now(),
-            teams: fetchedTeams.length ? fetchedTeams : teams,
-            competitions: fetchedCompetitions || competitions,
-            matches: fetchedMatches.length ? fetchedMatches : matches,
-            standings: fetchedStandings.length ? fetchedStandings : standings,
-            scorers: fetchedScorers.length ? fetchedScorers : scorers
+            teams: fetchedTeams,
+            competitions: fetchedCompetitions,
+            matches: fetchedMatches,
+            standings: fetchedStandings,
+            scorers: fetchedScorers
           }));
         } catch (e) {
           console.warn("Could not save to localStorage:", e);
         }
       } else {
-        // If live fetch was rate-limited or failed, preserve current data and show subtle notice
-        console.warn("API limit or network error, continuing with cached/initial data.");
-        setIsCached(true);
+        // If API call failed (e.g. 429), try loading existing cache
+        const cachedRaw = localStorage.getItem(CACHE_KEY);
+        if (cachedRaw) {
+          const cached = JSON.parse(cachedRaw);
+          setTeams(cached.teams || []);
+          setCompetitions(cached.competitions || null);
+          setMatches(cached.matches || []);
+          setStandings(cached.standings || []);
+          setScorers(cached.scorers || []);
+          setLastUpdated(new Date(cached.timestamp));
+          setIsCached(true);
+        } else {
+          throw new Error("Live API rate limit reached. Please wait a moment and retry.");
+        }
       }
 
     } catch (err) {
-      console.warn("Data sync notice:", err.message);
-      setIsCached(true);
+      console.error(err);
+      setError(err.message || "Failed to load World Cup data from live API.");
     } finally {
       setIsSyncing(false);
       setLoading(false);
